@@ -3,7 +3,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const cfg = require('../config');
+const cfg = require('./config');
 
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const MIME = {
