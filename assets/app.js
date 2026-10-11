@@ -1,30 +1,46 @@
 (function () {
   const $ = id => document.getElementById(id);
-  let LOW = 5;
-  let fmt = new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' });
+  const CFG = window.APP_CONFIG || {};
+  const LOW = Number(CFG.LOW_STOCK) || 5;
+  let fmt;
+  try { fmt = new Intl.NumberFormat(undefined, { style: 'currency', currency: CFG.CURRENCY || 'USD' }); }
+  catch (_) { fmt = new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD' }); }
   const money = n => fmt.format(n || 0);
   let items = [], sortK = 'name', sortD = 1, editId = null, delId = null;
 
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const margin = x => x.price > 0 ? (x.price - x.cost) / x.price * 100 : 0;
 
+  const ERRORS = {
+    DUPLICATE_SKU: 'That SKU already exists.',
+    NOT_FOUND: 'That product no longer exists. Refresh the page.',
+    Unauthorized: 'Token mismatch: SHEETS_TOKEN in config.js must equal TOKEN in Code.gs.'
+  };
+
+  // Talks straight to the Google Apps Script web app.
+  // text/plain keeps this a "simple" request, so the browser sends no CORS preflight.
   async function api(action, body) {
-    const res = await fetch('api/' + action, body === undefined ? {} : {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || 'Request failed.');
+    if (!CFG.SHEETS_URL || CFG.SHEETS_URL.startsWith('PASTE_')) throw new Error('Set SHEETS_URL in config.js first.');
+    let res;
+    try {
+      res = await fetch(CFG.SHEETS_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(Object.assign({}, body, { action: action, token: CFG.SHEETS_TOKEN })),
+        redirect: 'follow'
+      });
+    } catch (e) {
+      throw new Error('Could not reach Google. Check your internet connection and SHEETS_URL.');
+    }
+    let data;
+    try { data = await res.json(); }
+    catch (e) { throw new Error('Google did not return JSON. Check SHEETS_URL (must end in /exec) and that access is set to "Anyone".'); }
+    if (data.error) throw new Error(ERRORS[data.error] || data.error.replace(/^INVALID: /, ''));
     return data;
   }
 
   async function load() {
-    try {
-      const c = await api('config');
-      LOW = c.lowStock;
-      try { fmt = new Intl.NumberFormat(undefined, { style: 'currency', currency: c.currency }); } catch (_) {}
-      items = await api('list');
-      render();
-    }
+    try { items = (await api('list')).data || []; render(); }
     catch (e) { $('empty').hidden = false; $('empty').textContent = e.message; }
   }
 
@@ -84,7 +100,7 @@
     e.preventDefault();
     const body = {
       id: editId, sku: $('fSku').value.trim(), name: $('fName').value.trim(), category: $('fCat').value.trim(),
-      qty: $('fQty').value, cost: $('fCost').value, price: $('fPrice').value
+      qty: Number($('fQty').value), cost: Number($('fCost').value), price: Number($('fPrice').value)
     };
     if (!body.sku || !body.name) { $('err').textContent = 'SKU and product name are required.'; return; }
     $('save').disabled = true;

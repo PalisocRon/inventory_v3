@@ -1,9 +1,0 @@
-{
-  "name": "inventory-pricing-system",
-  "version": "1.0.0",
-  "description": "Inventory pricing system: Node.js + Google Sheets",
-  "main": "server.js",
-  "scripts": { "start": "node server.js" },
-  "engines": { "node": ">=18" },
-  "license": "MIT"
-}

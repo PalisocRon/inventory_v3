@@ -2,7 +2,7 @@
  * Inventory backend for Google Sheets.
  * Paste this into Extensions > Apps Script of your Google Sheet, then deploy as a Web app.
  */
-const TOKEN = 'CHANGE_ME_TO_A_LONG_RANDOM_STRING'; // must match SHEETS_TOKEN in config.php
+const TOKEN = 'CHANGE_ME_TO_A_LONG_RANDOM_STRING'; // must match SHEETS_TOKEN in config.js
 const SHEET_NAME = 'Products';
 const HEADERS = ['id', 'sku', 'name', 'category', 'qty', 'cost', 'price', 'updated_at'];
 
@@ -14,6 +14,12 @@ function doPost(e) {
     locked = true;
     const req = JSON.parse(e.postData.contents);
     if (req.token !== TOKEN) return out({ error: 'Unauthorized' });
+
+    if (req.action === 'create' || req.action === 'update') {
+      const v = clean(req);
+      if (v.error) return out(v);
+      Object.assign(req, v);
+    }
 
     const sh = getSheet();
     switch (req.action) {
@@ -32,6 +38,20 @@ function doPost(e) {
 
 // Opening the URL in a browser is just a health check.
 function doGet() { return out({ ok: true, message: 'Inventory API is running.' }); }
+
+/** Validate and sanitise product fields. Returns {error} or the cleaned fields. */
+function clean(r) {
+  let sku = String(r.sku == null ? '' : r.sku).trim();
+  let name = String(r.name == null ? '' : r.name).trim();
+  let category = String(r.category == null ? '' : r.category).trim();
+  if (!sku || !name) return { error: 'INVALID: SKU and product name are required.' };
+  if (sku.length > 40 || name.length > 100 || category.length > 40) return { error: 'INVALID: A field is too long.' };
+  const safe = v => (v && '=+-@'.indexOf(v.charAt(0)) >= 0 ? "'" + v : v); // block formula injection
+  const qty = Number(r.qty == null ? 0 : r.qty), cost = Number(r.cost == null ? 0 : r.cost), price = Number(r.price == null ? 0 : r.price);
+  if (!isFinite(qty) || qty % 1 !== 0 || qty < 0 || !isFinite(cost) || cost < 0 || !isFinite(price) || price < 0)
+    return { error: 'INVALID: Quantity and prices must be zero or more.' };
+  return { sku: safe(sku), name: safe(name), category: safe(category), qty: qty, cost: Math.round(cost * 100) / 100, price: Math.round(price * 100) / 100 };
+}
 
 function out(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
